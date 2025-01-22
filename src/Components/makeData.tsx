@@ -8,6 +8,7 @@ export type Person = {
   progress: number
   status: 'relationship' | 'complicated' | 'single'
   subRows?: Person[]
+  channelName: any
 }
 
 const range = (len: number) => {
@@ -30,6 +31,7 @@ const newPerson = (): Person => {
       'complicated',
       'single',
     ])[0]!,
+    channelName:  null,
   }
 }
 
@@ -46,3 +48,5 @@ export function makeData(...lens: number[]) {
 
   return makeDataLevel()
 }
+
+

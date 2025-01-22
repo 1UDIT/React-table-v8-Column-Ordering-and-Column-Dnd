@@ -1,4 +1,4 @@
-import React, { CSSProperties, useEffect, useState } from 'react';
+import React, { CSSProperties, useCallback, useEffect, useState } from 'react';
 import {
   DndContext,
   KeyboardSensor,
@@ -18,8 +18,9 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useReactTable, ColumnDef, getCoreRowModel, flexRender } from '@tanstack/react-table';
 import { RxHamburgerMenu } from "react-icons/rx";
+import useKeyboardNavigation from './Components/useKeyboardNavigation';
 
- 
+
 const SortableItem = ({
   id,
   column,
@@ -45,9 +46,7 @@ const SortableItem = ({
     cursor: 'grab',
   };
 
-  console.log(column.getIsVisible(), "column.getIsVisible()", id)
-
-  return (<>
+  return (
     <div style={style}> <span ref={setNodeRef}  {...attributes} {...listeners}><RxHamburgerMenu /></span>
       <label>
         <input
@@ -58,12 +57,13 @@ const SortableItem = ({
         {column.id}
       </label>
     </div>
-  </>
   );
 };
 
 
 export default function App() {
+  const [hiddenRows, setHiddenRows] = useState<number[]>([]);
+
   const columns = React.useMemo<ColumnDef<any>[]>(
     () => [
       { accessorKey: 'firstName', header: 'First Name', id: 'firstName' },
@@ -72,11 +72,59 @@ export default function App() {
       { accessorKey: 'visits', header: 'Visits', id: 'visits' },
       { accessorKey: 'status', header: 'Status', id: 'status' },
       { accessorKey: 'progress', header: 'Progress', id: 'progress' },
+      { accessorKey: 'channelName', header: 'Channel Name', cell: (info) => runChannelName(info.row), id: 'channelName' },
     ],
     []
   );
 
-  // Initialize column order from localStorage or default order
+
+  const runChannelName = (value: any) => {
+    const [ChannelName, setChannelName] = useState<boolean>(false);
+    const [ActiveDropDown, setActiveDrop] = useState<number | null>();
+
+    const toggleDropdown = () => {
+      setChannelName((prevChannelName) => {
+        const newChannelName = !(ActiveDropDown === value.id && prevChannelName);
+
+        // If the dropdown is being opened, set ActiveDropDown to the current value's ID.
+        if (newChannelName) {
+          setActiveDrop(value.id);
+        } else {
+          // Close the dropdown by clearing ActiveDropDown.
+          setActiveDrop(null);
+        }
+        return newChannelName;
+      });
+    };
+
+    return (
+      <>
+        <div
+          className="relative flex justify-center"
+          onClick={toggleDropdown}
+        >
+          A
+          {ChannelName && ActiveDropDown === value.id && (
+            <div
+              className="absolute bg-white border rounded shadow-md"
+              style={{
+                top: '90%',
+                left: '50%',
+                transform: 'translate(-50%, 0%)',
+                padding: '10px',
+                zIndex: 10,
+              }}
+            >
+              <div>A</div>
+              <div>B</div>
+            </div>
+          )}
+        </div>
+      </>
+    );
+  }
+
+
   const [columnOrder, setColumnOrder] = useState<string[]>(() => {
     const savedOrder = localStorage.getItem('columnOrder');
     return savedOrder ? JSON.parse(savedOrder) : columns.map(c => c.id!);
@@ -90,6 +138,7 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('columnOrder', JSON.stringify(columnOrder));
   }, [columnOrder]);
+
   useEffect(() => {
     localStorage.setItem('columnVisibility', JSON.stringify(columnVisibility));
   }, [columnVisibility]);
@@ -104,7 +153,30 @@ export default function App() {
     progress: Math.floor(Math.random() * 100),
   })));
 
-  
+  const [keyNavigation, setKeyNavigation] = useKeyboardNavigation(data?.length, data);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter' && keyNavigation !== null) {
+        setHiddenRows((prev) => [...prev, keyNavigation]);
+      }
+    };
+
+    const handleWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) { // Mouse wheel up
+        setHiddenRows((prev) => prev.slice(0, -1)); // Remove the last hidden row
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('wheel', handleWheel);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('wheel', handleWheel);
+    };
+  }, [keyNavigation]);
+  const isRowHidden = (index: number) => hiddenRows.includes(index);
   const table = useReactTable({
     data,
     columns,
@@ -142,7 +214,7 @@ export default function App() {
           {/* Draggable List */}
           <div className="w-64 border border-gray-300 rounded p-2">
             <h4 className="font-semibold mb-2">Reorder & Toggle Columns</h4>
-            <div className="inline-block border border-black shadow rounded">
+            <div className="inline-block border border-black shadow rounded w-full">
               <div className="px-1 border-b border-black">
                 <label>
                   <input
@@ -165,7 +237,7 @@ export default function App() {
                   ))}
                 </SortableContext>
               </div>
-            </div> 
+            </div>
           </div>
 
           {/* Table */}
@@ -188,15 +260,25 @@ export default function App() {
                 ))}
               </thead>
               <tbody>
-                {table.getRowModel().rows.map(row => (
-                  <tr key={row.id}>
-                    {row.getVisibleCells().map(cell => (
-                      <td key={cell.id}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
+                {table.getRowModel().rows
+                  .filter(row => !isRowHidden(row.index)) // Exclude hidden rows
+                  .map(row => (
+                    <tr
+                      key={row.id}
+                      tabIndex={row.index}
+                      className={`font-medium h-7 text-center 
+                        ${keyNavigation === row.index
+                          ? 'bg-[#e0cfb0] text-black'
+                          : 'text-white odd:bg-[#24303f] even:bg-[#2d3d52]'}`}
+                      onClick={() => setKeyNavigation(row.index)}
+                    >
+                      {row.getVisibleCells().map(cell => (
+                        <td key={cell.id}>
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>
